@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>The Cursed Tomb: Shadows of the Sand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --sand-black:#0e0b07; --stone:#241d15; --stone-light:#362b1e;
+    --gold:#c9922b; --gold-bright:#f0c065; --blood:#9a2e20; --ember:#ff7a3d;
+    --parchment:#efe3c9; --parchment-dim:#b3a284; --arcane:#a06fe0;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; padding:0; height:100%; background:#000; color:var(--parchment); font-family:'Lora',serif; overflow:hidden; }
+  #app{
+    position:relative; width:100%; height:100vh; max-width:480px; margin:0 auto;
+    background:var(--sand-black); display:flex; flex-direction:column; overflow:hidden; isolation:isolate;
+  }
+  #app.shake{ animation: shake 0.4s ease; }
+  @keyframes shake{
+    0%,100%{ transform:translate(0,0); } 20%{ transform:translate(-6px,2px); }
+    40%{ transform:translate(5px,-3px); } 60%{ transform:translate(-4px,3px); } 80%{ transform:translate(3px,-2px); }
+  }
+
+  #stage{ position:absolute; top:0; left:0; right:0; height:56%; z-index:0; background:#000; }
+  #stage canvas{ display:block; width:100%; height:100%; }
+
+  .vignette{
+    position:absolute; inset:0; z-index:1; pointer-events:none;
+    background: radial-gradient(ellipse 90% 70% at 50% 40%, transparent 45%, rgba(0,0,0,0.65) 100%),
+                linear-gradient(180deg, rgba(0,0,0,0.15) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.5) 100%);
+  }
+  .danger-pulse{
+    position:absolute; inset:0; z-index:1; pointer-events:none;
+    background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(154,46,32,0.4) 100%);
+    opacity:0; animation: dangerBreath 1.1s ease-in-out infinite;
+  }
+  .danger-pulse.on{ opacity:1; }
+  @keyframes dangerBreath{ 0%,100%{ opacity:0.25;} 50%{ opacity:0.55;} }
+
+  #app::after{
+    content:""; position:absolute; inset:0; z-index:2; pointer-events:none;
+    background-image: repeating-linear-gradient(115deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px);
+    mix-blend-mode: overlay;
+  }
+
+  /* ---- On-stage command prompt (the "press X" cinematic prompt) ---- */
+  #cmd-prompt{
+    position:absolute; z-index:3; left:50%; top:56%; transform:translate(-50%,-50%);
+    display:none; flex-direction:column; align-items:center; gap:8px; pointer-events:auto;
+  }
+  #cmd-key{
+    width:56px; height:56px; border-radius:10px;
+    border:2px solid var(--gold-bright); background:rgba(14,11,7,0.85);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Cinzel', serif; font-size:22px; font-weight:900; color:var(--gold-bright);
+    box-shadow: 0 0 18px rgba(240,192,101,0.55);
+    animation: keyPulse 1.4s ease-in-out infinite;
+    cursor:pointer; user-select:none;
+  }
+  @keyframes keyPulse{ 0%,100%{ box-shadow:0 0 10px rgba(240,192,101,0.35);} 50%{ box-shadow:0 0 24px rgba(240,192,101,0.7);} }
+  #cmd-key.holding{ animation:none; background: rgba(240,192,101,0.25); }
+  #cmd-ring{ width:74px; height:74px; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; }
+  #cmd-label{
+    font-family:'Cinzel', serif; font-size:12px; letter-spacing:1.5px; color:var(--parchment);
+    text-shadow: 0 2px 8px rgba(0,0,0,0.9); text-align:center; max-width:240px;
+  }
+
+  /* ---- UI / dialogue layer ---- */
+  #ui-layer{ position:relative; z-index:5; display:flex; flex-direction:column; height:100%; }
+  #topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px 8px; position:relative; z-index:6;
+  }
+  .resource{ display:flex; align-items:center; gap:6px; font-family:'Cinzel', serif; font-size:12px; color:var(--gold-bright); text-shadow:0 1px 4px #000; }
+  .resource .icon{ width:14px; height:14px; display:inline-block; }
+  .resource.coin .icon{ background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold) 60%, #8a6317 100%); border-radius:50%; box-shadow:0 0 8px rgba(240,192,101,0.6); }
+  .resource.shard .icon{ background: linear-gradient(135deg,#e6d6f2,var(--arcane) 60%,#5a3a78); clip-path: polygon(50% 0%,100% 38%,80% 100%,20% 100%,0% 38%); }
+  #chapter-label{ font-family:'Cinzel', serif; font-size:10px; letter-spacing:1.5px; color:var(--parchment-dim); text-shadow:0 1px 4px #000; }
+
+  #dialogue-box{
+    margin-top: 56vh;
+    flex:1; display:flex; flex-direction:column;
+    background: linear-gradient(180deg, rgba(10,7,4,0.55) 0%, rgba(10,7,4,0.94) 22%, #0c0906 100%);
+    padding: 16px 18px 10px;
+    overflow-y:auto;
+  }
+  #dialogue-box::-webkit-scrollbar{ width:0; }
+
+  .title-block h1{ font-family:'Cinzel', serif; font-weight:900; font-size:23px; margin:0 0 2px; color:var(--parchment); text-shadow:0 0 20px rgba(240,192,101,0.3); }
+  .title-block .sub{ font-family:'Cinzel', serif; font-size:11px; letter-spacing:2.5px; color:var(--gold-bright); }
+
+  .narration p{ font-size:15.5px; line-height:1.55; margin:0 0 12px; text-shadow:0 1px 4px rgba(0,0,0,0.7); animation: fadeUp .5s ease both; }
+  .narration .whisper{ font-style:italic; color:#d8bdf0; border-left:2px solid var(--arcane); padding:5px 0 5px 11px; margin:4px 0 12px; }
+  .narration .system-line{ font-family:'Cinzel', serif; font-size:11px; letter-spacing:1.5px; color:var(--parchment-dim); text-align:center; margin:4px 0 14px; }
+  @keyframes fadeUp{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+  #choices{ display:flex; flex-direction:column; gap:9px; margin-top:auto; padding-top:4px; }
+  .choice-btn{
+    font-family:'Lora', serif; font-size:14.5px; color:var(--parchment);
+    background: linear-gradient(180deg, rgba(54,43,30,0.9), rgba(36,29,21,0.9));
+    border:1px solid rgba(201,146,43,0.4); border-radius:3px; padding:12px 14px; text-align:left; cursor:pointer;
+    transition: border-color .15s ease, transform .08s ease, box-shadow .2s ease;
+  }
+  .choice-btn:active{ transform:scale(0.98); }
+  .choice-btn:hover{ border-color:var(--gold-bright); box-shadow:0 0 14px rgba(201,146,43,0.25); }
+  .choice-btn.premium{ border-color: rgba(160,111,224,0.6); }
+  .choice-btn.premium::after{ content:"◆ Ember Shard"; display:block; font-family:'Cinzel', serif; font-size:9px; color:#d8bdf0; margin-top:4px; }
+
+  #qte-wrap{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:6px 0 4px; }
+  #qte-instruction{ font-family:'Cinzel', serif; font-size:12px; letter-spacing:1px; color:var(--gold-bright); text-align:center; }
+  #qte-track{ width:100%; height:14px; background:rgba(10,7,4,0.7); border:1px solid rgba(201,146,43,0.5); border-radius:8px; position:relative; overflow:hidden; }
+  #qte-zone{ position:absolute; top:0; bottom:0; left:62%; width:16%; background:rgba(154,46,32,0.55); border-left:1px solid var(--ember); border-right:1px solid var(--ember); }
+  #qte-cursor{ position:absolute; top:-3px; bottom:-3px; width:4px; background:var(--gold-bright); box-shadow:0 0 10px var(--gold-bright); left:0%; }
+  #qte-hint{ font-family:'Cinzel', serif; font-size:11px; letter-spacing:1px; color:var(--parchment-dim); }
+  #qte-result{ font-size:12.5px; color:var(--parchment-dim); min-height:16px; text-align:center; }
+
+  #lock-screen{ display:none; flex:1; flex-direction:column; align-items:center; justify-content:center; padding:26px; text-align:center; gap:12px; }
+  #lock-screen .glyph{ width:52px; height:52px; border:1px solid var(--gold-bright); border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:'Cinzel', serif; font-size:20px; color:var(--gold-bright); animation: glyphPulse 3s ease-in-out infinite; }
+  @keyframes glyphPulse{ 0%,100%{ box-shadow:0 0 12px rgba(240,192,101,0.25);} 50%{ box-shadow:0 0 26px rgba(240,192,101,0.55);} }
+  #lock-screen h2{ font-family:'Cinzel', serif; font-size:18px; margin:0; }
+  #lock-screen p{ font-size:13px; color:var(--parchment-dim); max-width:280px; line-height:1.5; margin:0; }
+  #timer{ font-family:'Cinzel', serif; font-size:24px; color:var(--gold-bright); letter-spacing:2px; }
+  .lock-actions{ display:flex; flex-direction:column; gap:9px; width:100%; max-width:270px; margin-top:6px; }
+  .lock-btn{ font-family:'Cinzel', serif; font-size:12.5px; padding:12px; border-radius:4px; border:1px solid rgba(201,146,43,0.4); background:rgba(54,43,30,0.85); color:var(--parchment); cursor:pointer; }
+  .lock-btn.primary{ background:linear-gradient(180deg,var(--gold-bright),var(--gold)); color:var(--sand-black); font-weight:700; border:none; }
+
+  #restart-row{ position:relative; z-index:6; padding:8px 16px 12px; text-align:center; }
+  #restart-row button{ background:none; border:none; color:var(--parchment-dim); font-family:'Lora', serif; font-size:11px; text-decoration:underline; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="stage"></div>
+  <div class="danger-pulse" id="danger-pulse"></div>
+  <div class="vignette"></div>
+
+  <div id="cmd-prompt">
+    <div style="position:relative;">
+      <svg id="cmd-ring" viewBox="0 0 80 80">
+        <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(240,192,101,0.2)" stroke-width="4"/>
+        <circle id="cmd-ring-fill" cx="40" cy="40" r="34" fill="none" stroke="#f0c065" stroke-width="4"
+                stroke-dasharray="213.6" stroke-dashoffset="213.6" stroke-linecap="round"
+                transform="rotate(-90 40 40)"/>
+      </svg>
+      <div id="cmd-key">E</div>
+    </div>
+    <div id="cmd-label">HOLD [E] TO FORCE THE GATE</div>
+  </div>
+
+  <div id="ui-layer">
+    <div id="topbar">
+      <div class="resource coin"><span class="icon"></span><span id="coin-count">40</span></div>
+      <div id="chapter-label">CH. 1 — WAKING AMONG THE DEAD</div>
+      <div class="resource shard"><span class="icon"></span><span id="shard-count">3</span></div>
+    </div>
+
+    <div id="dialogue-box">
+      <div id="scene"></div>
+
+      <div id="lock-screen">
+        <div class="glyph">&#x2726;</div>
+        <h2>Chapter 4 is sealed</h2>
+        <p>The next chamber will open on its own in:</p>
+        <div id="timer">02:47:13</div>
+        <div class="lock-actions">
+          <button class="lock-btn primary" id="unlock-coins">Unlock now — 20 <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--gold-bright);vertical-align:middle;margin:0 2px;"></span></button>
+          <button class="lock-btn" id="watch-ad">Watch a vision (ad) for 10 <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--gold-bright);vertical-align:middle;margin:0 2px;"></span></button>
+        </div>
+        <p style="margin-top:12px; font-size:11px;">This is where the real app gates progress — demo only, nothing is actually charged here.</p>
+      </div>
+    </div>
+
+    <div id="restart-row"><button id="restart-btn">Restart demo</button></div>
+  </div>
+</div>
+
+<script>
+/* ================= THREE.JS 3D CORRIDOR ================= */
+const stageEl = document.getElementById('stage');
+let scene, camera, renderer, torchLightA, torchLightB, gateMesh, dustPoints;
+let clock = new THREE.Clock();
+
+function initScene(){
+  scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x0a0704, 0.075);
+
+  camera = new THREE.PerspectiveCamera(58, stageEl.clientWidth/stageEl.clientHeight, 0.1, 100);
+  camera.position.set(0, 1.5, 9);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(stageEl.clientWidth, stageEl.clientHeight);
+  renderer.setClearColor(0x0a0704, 1);
+  stageEl.appendChild(renderer.domElement);
+
+  // ambient dim light
+  scene.add(new THREE.AmbientLight(0x2a2016, 0.9));
+
+  // floor
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x241d15, roughness: 1 });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(6, 40), floorMat);
+  floor.rotation.x = -Math.PI/2;
+  floor.position.set(0, 0, -8);
+  scene.add(floor);
+
+  // ceiling
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x120d08, roughness: 1 });
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(6, 40), ceilMat);
+  ceil.rotation.x = Math.PI/2;
+  ceil.position.set(0, 4.2, -8);
+  scene.add(ceil);
+
+  // pillars along the corridor
+  const pillarMat = new THREE.MeshStandardMaterial({ color: 0x1c150c, roughness: 0.95 });
+  for(let i=0;i<6;i++){
+    const z = 6 - i*4;
+    [-2.6, 2.6].forEach(x=>{
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.6, 4.2, 0.6), pillarMat);
+      pillar.position.set(x, 2.1, z);
+      scene.add(pillar);
+    });
+  }
+
+  // torches (glowing spheres + point lights) on first pair of pillars
+  function makeTorch(x, z){
+    const flame = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffb15c })
+    );
+    flame.position.set(x, 2.9, z);
+    scene.add(flame);
+    const light = new THREE.PointLight(0xff7a3d, 2.2, 7, 2);
+    light.position.set(x, 2.9, z);
+    scene.add(light);
+    return light;
+  }
+  torchLightA = makeTorch(-2.5, 3.5);
+  torchLightB = makeTorch(2.5, 3.5);
+  makeTorch(-2.5, -4.5);
+  makeTorch(2.5, -4.5);
+
+  // arcane point light (off by default, for Nyrath moments)
+  window._arcaneLight = new THREE.PointLight(0xa06fe0, 0, 10, 2);
+  window._arcaneLight.position.set(0, 1.6, -6);
+  scene.add(window._arcaneLight);
+
+  // stone gate blocking the corridor
+  const gateMat = new THREE.MeshStandardMaterial({ color: 0x30251a, roughness: 0.9 });
+  gateMesh = new THREE.Mesh(new THREE.BoxGeometry(4.6, 4.2, 0.5), gateMat);
+  gateMesh.position.set(0, 2.1, -10);
+  scene.add(gateMesh);
+
+  // dust particles
+  const N = 260;
+  const positions = new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    positions[i*3]   = (Math.random()-0.5)*5.5;
+    positions[i*3+1] = Math.random()*4;
+    positions[i*3+2] = -Math.random()*30 + 6;
+  }
+  const dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const dustMat = new THREE.PointsMaterial({ color: 0xd8c9a0, size: 0.035, transparent: true, opacity: 0.55 });
+  dustPoints = new THREE.Points(dustGeo, dustMat);
+  scene.add(dustPoints);
+
+  animate();
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  torchLightA.intensity = 1.8 + Math.sin(t*7.3)*0.35 + Math.random()*0.15;
+  torchLightB.intensity = 1.8 + Math.sin(t*6.1+1.3)*0.35 + Math.random()*0.15;
+
+  const pos = dustPoints.geometry.attributes.position;
+  for(let i=0;i<pos.count;i++){
+    let y = pos.getY(i) + 0.0025;
+    if(y > 4) y = 0;
+    pos.setY(i, y);
+  }
+  pos.needsUpdate = true;
+
+  renderer.render(scene, camera);
+}
+
+function resizeStage(){
+  if(!renderer) return;
+  const w = stageEl.clientWidth, h = stageEl.clientHeight;
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+window.addEventListener('resize', resizeStage);
+
+function dollyCameraTo(z, duration=1800){
+  const startZ = camera.position.z;
+  const startTime = performance.now();
+  function step(now){
+    const p = Math.min(1, (now - startTime)/duration);
+    const eased = 1 - Math.pow(1-p, 3);
+    camera.position.z = startZ + (z - startZ) * eased;
+    if(p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function setArcaneGlow(on){
+  const target = on ? 1.6 : 0;
+  const start = window._arcaneLight.intensity;
+  const startTime = performance.now();
+  function step(now){
+    const p = Math.min(1, (now-startTime)/700);
+    window._arcaneLight.intensity = start + (target-start)*p;
+    if(p<1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function openGateAnimation(){
+  const startY = gateMesh.position.y;
+  const startTime = performance.now();
+  function step(now){
+    const p = Math.min(1, (now-startTime)/1200);
+    gateMesh.position.y = startY + p*5.5;
+    if(p<1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ================= COMMAND PROMPT (press / hold) ================= */
+const cmdPrompt = document.getElementById('cmd-prompt');
+const cmdKey = document.getElementById('cmd-key');
+const cmdLabel = document.getElementById('cmd-label');
+const ringFill = document.getElementById('cmd-ring-fill');
+const RING_LEN = 213.6;
+
+let activePrompt = null; // { key, mode: 'hold'|'press', holdMs, onComplete }
+let holdStart = null;
+let holdRAF = null;
+
+function showPrompt(cfg){
+  activePrompt = cfg;
+  cmdKey.textContent = cfg.key.toUpperCase();
+  cmdLabel.textContent = cfg.label;
+  cmdPrompt.style.display = 'flex';
+  ringFill.style.strokeDashoffset = RING_LEN;
+}
+function hidePrompt(){
+  activePrompt = null;
+  cmdPrompt.style.display = 'none';
+  cmdKey.classList.remove('holding');
+  clearInterval(holdRAF);
+  ringFill.style.strokeDashoffset = RING_LEN;
+}
+
+function beginHold(){
+  if(!activePrompt || activePrompt.mode !== 'hold') return;
+  cmdKey.classList.add('holding');
+  holdStart = performance.now();
+  clearInterval(holdRAF);
+  holdRAF = setInterval(()=>{
+    const elapsed = performance.now() - holdStart;
+    const p = Math.min(1, elapsed/activePrompt.holdMs);
+    ringFill.style.strokeDashoffset = RING_LEN * (1-p);
+    if(p >= 1){
+      clearInterval(holdRAF);
+      const cb = activePrompt.onComplete;
+      hidePrompt();
+      cb && cb();
+    }
+  }, 16);
+}
+function endHold(){
+  if(!activePrompt || activePrompt.mode !== 'hold') return;
+  clearInterval(holdRAF);
+  cmdKey.classList.remove('holding');
+  ringFill.style.strokeDashoffset = RING_LEN;
+}
+function pressActivate(){
+  if(!activePrompt) return;
+  if(activePrompt.mode === 'press'){
+    const cb = activePrompt.onComplete;
+    hidePrompt();
+    cb && cb();
+  }
+}
+
+cmdKey.addEventListener('pointerdown', ()=>{ activePrompt && activePrompt.mode==='hold' ? beginHold() : pressActivate(); });
+cmdKey.addEventListener('pointerup', endHold);
+cmdKey.addEventListener('pointerleave', endHold);
+window.addEventListener('keydown', (e)=>{
+  if(!activePrompt) return;
+  if(e.key.toLowerCase() === activePrompt.key.toLowerCase()){
+    if(activePrompt.mode === 'hold') beginHold();
+    else pressActivate();
+  }
+});
+window.addEventListener('keyup', (e)=>{
+  if(!activePrompt) return;
+  if(e.key.toLowerCase() === activePrompt.key.toLowerCase() && activePrompt.mode === 'hold') endHold();
+});
+
+function shakeScreen(){
+  const app = document.getElementById('app');
+  app.classList.remove('shake'); void app.offsetWidth; app.classList.add('shake');
+}
+function setDanger(on){ document.getElementById('danger-pulse').classList.toggle('on', on); }
+
+/* ================= STORY / GAME STATE ================= */
+const state = { coins: 40, shards: 3, trustNyrath: null };
+const sceneEl = document.getElementById('scene');
+const chapterLabel = document.getElementById('chapter-label');
+const lockScreen = document.getElementById('lock-screen');
+const coinCountEl = document.getElementById('coin-count');
+const shardCountEl = document.getElementById('shard-count');
+
+function updateResources(){ coinCountEl.textContent = state.coins; shardCountEl.textContent = state.shards; }
+function clearScene(){ sceneEl.innerHTML=''; setDanger(false); setArcaneGlow(false); }
+
+function renderNarration(blocks){
+  blocks.forEach(b=>{
+    const p = document.createElement(b.tag==='system' ? 'div' : 'p');
+    if(b.tag==='whisper'){ p.className='whisper'; setArcaneGlow(true); }
+    if(b.tag==='system') p.className='system-line';
+    p.textContent = b.text;
+    sceneEl.appendChild(p);
+  });
+}
+function renderTitle(title, sub){
+  const wrap = document.createElement('div');
+  wrap.className = 'title-block';
+  wrap.innerHTML = `<div class="sub">${sub}</div><h1>${title}</h1>`;
+  sceneEl.appendChild(wrap);
+}
+function renderChoices(options){
+  const wrap = document.createElement('div'); wrap.id='choices';
+  options.forEach(opt=>{
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn' + (opt.premium ? ' premium' : '');
+    btn.textContent = opt.text;
+    btn.onclick = () => {
+      if(opt.premium && state.shards < 1){ alert('Not enough Ember Shards.'); return; }
+      if(opt.premium){ state.shards -= 1; updateResources(); }
+      opt.onSelect();
+    };
+    wrap.appendChild(btn);
+  });
+  sceneEl.appendChild(wrap);
+  document.getElementById('dialogue-box').scrollTop = document.getElementById('dialogue-box').scrollHeight;
+}
+
+function chapter1_intro(){
+  chapterLabel.textContent = 'CH. 1 — WAKING AMONG THE DEAD';
+  dollyCameraTo(6, 1);
+  clearScene();
+  renderTitle('The Cursed Tomb', 'SHADOWS OF THE SAND');
+  renderNarration([
+    {text:'Dust. That is the first thing Kael Ashur tastes as his eyes open — dust, and the metal tang of old blood.'},
+    {text:'Around him, the great entry hall of the Sunken Temple lies in ruin. His squad — twelve of the King\'s finest — does not move. None of them will move again.'},
+    {text:'In Commander Dara Vey\'s cold hand is a letter, its wax seal already broken. He recognizes the crest before he even unfolds it. The King\'s own hand.'},
+  ]);
+  renderChoices([
+    { text:'Read the letter now.', onSelect: chapter1_letter },
+    { text:'Search the hall for survivors first.', onSelect: chapter1_search },
+  ]);
+}
+function chapter1_letter(){
+  clearScene();
+  renderTitle('The Cursed Tomb', 'SHADOWS OF THE SAND');
+  renderNarration([
+    {text:'Kael unfolds the letter with hands that will not quite steady.'},
+    {text:'"Seal the entrance. Burn the records. None who entered must leave alive."', tag:'whisper'},
+    {text:'His own King. Ordering his own guard buried alive, in this forgotten place, for a reason no one thought to tell him.'},
+  ]);
+  proceedToCorridor();
+}
+function chapter1_search(){
+  clearScene();
+  renderTitle('The Cursed Tomb', 'SHADOWS OF THE SAND');
+  renderNarration([
+    {text:'Kael checks each of his fallen brothers in turn. No pulse. No breath. Only Dara\'s hand still grips something — a sealed letter bearing the King\'s crest.'},
+    {text:'"Seal the entrance. Burn the records. None who entered must leave alive."', tag:'whisper'},
+  ]);
+  proceedToCorridor();
+}
+function proceedToCorridor(){
+  const btn = document.createElement('button');
+  btn.className = 'choice-btn';
+  btn.textContent = 'Move deeper into the temple →';
+  btn.onclick = () => { dollyCameraTo(1, 2200); setTimeout(chapter2_trap, 900); };
+  sceneEl.appendChild(btn);
+}
+
+function chapter2_trap(){
+  chapterLabel.textContent = 'CH. 2 — THE FIRST TRAP';
+  clearScene();
+  setDanger(true);
+  renderTitle('The First Trap', 'A CORRIDOR OF BLADES');
+  renderNarration([
+    {text:'The corridor ahead is lined with rusted blade mechanisms, still swinging on some ancient mechanism that refuses to die.'},
+    {text:'A voice uncoils inside his skull — calm, old, almost gentle.'},
+    {text:'"I could carry you across, little guardian. Only let me loose a little further, and this corridor is nothing."', tag:'whisper'},
+  ]);
+  const qteWrap = document.createElement('div'); qteWrap.id='qte-wrap';
+  qteWrap.innerHTML = `
+    <div id="qte-instruction">TIME YOUR STRIKE</div>
+    <div id="qte-track"><div id="qte-zone"></div><div id="qte-cursor"></div></div>
+    <div id="qte-hint">PRESS [SPACE] OR TAP THE PROMPT ABOVE</div>
+    <div id="qte-result"></div>
+  `;
+  sceneEl.appendChild(qteWrap);
+  const cursor = qteWrap.querySelector('#qte-cursor');
+  const resultEl = qteWrap.querySelector('#qte-result');
+  let pos = 0, dir = 1, running = true;
+  function tick(){
+    if(!running) return;
+    pos += dir*1.6;
+    if(pos>=100){ pos=100; dir=-1; } if(pos<=0){ pos=0; dir=1; }
+    cursor.style.left = pos+'%';
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  function resolveStrike(){
+    if(!running) return;
+    running = false;
+    const hit = pos>=58 && pos<=78;
+    shakeScreen();
+    if(hit){ state.coins += 5; updateResources(); resultEl.textContent = 'Clean strike. Kael clears the blade run without a scratch.'; }
+    else { resultEl.textContent = 'A blade catches his shoulder. He clears it anyway — bleeding, but alive.'; }
+    setDanger(false);
+    setTimeout(chapter2_choice, 1300);
+  }
+  showPrompt({ key:' ', mode:'press', label:'PRESS TO STRIKE', onComplete: resolveStrike });
+  window._spaceHandler = (e)=>{ if(e.code==='Space'){ e.preventDefault(); resolveStrike(); } };
+  window.addEventListener('keydown', window._spaceHandler);
+  qteWrap.querySelector('#qte-track').onclick = resolveStrike;
+}
+
+function chapter2_choice(){
+  window.removeEventListener('keydown', window._spaceHandler);
+  clearScene();
+  renderTitle('The First Trap', 'A CORRIDOR OF BLADES');
+  renderNarration([
+    {text:'On the far side of the bridge, the presence in his mind stirs again, patient as sand.'},
+    {text:'"You felt that, didn\'t you? A taste of what I could give you. All I ask is a single chain, loosened, whenever you\'re ready."', tag:'whisper'},
+  ]);
+  renderChoices([
+    { text:'Refuse. "I\'ll find my own way out."', onSelect: () => { state.trustNyrath=false; chapter_gate(); } },
+    { text:'Ask what it would truly cost.', onSelect: () => { state.trustNyrath='curious'; chapter_gate(); } },
+    { text:'Loosen one chain, just slightly.', premium:true, onSelect: () => { state.trustNyrath=true; chapter_gate(); } },
+  ]);
+}
+
+function chapter_gate(){
+  chapterLabel.textContent = 'CH. 2 — THE SEALED GATE';
+  clearScene();
+  dollyCameraTo(-3, 2500);
+  renderTitle('The Sealed Gate', 'A WALL OF ANCIENT STONE');
+  renderNarration([
+    {text:'The corridor ends at a slab of stone taller than three men, etched with warnings no living tongue can read anymore.'},
+    {text:'It hasn\'t moved in centuries. It will take everything Kael has to force it now.'},
+  ]);
+  showPrompt({ key:'e', mode:'hold', holdMs:1600, label:'HOLD [E] TO FORCE THE GATE', onComplete: ()=>{
+    openGateAnimation();
+    shakeScreen();
+    setTimeout(chapter3_teaser, 1000);
+  }});
+}
+
+function chapter3_teaser(){
+  chapterLabel.textContent = 'CH. 3 — DARA\'S JOURNAL';
+  clearScene();
+  renderTitle('Dara\'s Journal', 'WHAT SHE KNEW');
+  renderNarration([{
+    text: state.trustNyrath === true
+      ? 'The chain gives, just slightly, and something ancient exhales. Kael feels stronger — and colder.'
+      : state.trustNyrath === 'curious'
+      ? 'The voice only laughs, low and old. "Ask again when the sand runs thinner, guardian."'
+      : 'The voice goes quiet, but Kael feels it watching. Waiting.',
+    tag:'whisper'
+  }]);
+  renderNarration([
+    {text:'The gate groans open at last. Beyond it, a side chamber holds Commander Dara Vey\'s field journal, half-buried in fallen stone.'}
+  ]);
+  renderNarration([{text:'— END OF DEMO CHAPTER —', tag:'system'}]);
+  setTimeout(showLockScreen, 900);
+}
+
+function showLockScreen(){
+  sceneEl.style.display='none';
+  document.getElementById('restart-row').style.display='none';
+  lockScreen.style.display='flex';
+  chapterLabel.textContent = 'CH. 4 — LOCKED';
+  startFakeTimer();
+}
+function startFakeTimer(){
+  let total = 2*3600+47*60+13;
+  const timerEl = document.getElementById('timer');
+  const iv = setInterval(()=>{
+    total -= 1; if(total<0){ total=0; clearInterval(iv); }
+    const h=String(Math.floor(total/3600)).padStart(2,'0');
+    const m=String(Math.floor((total%3600)/60)).padStart(2,'0');
+    const s=String(total%60).padStart(2,'0');
+    timerEl.textContent = `${h}:${m}:${s}`;
+  }, 1000);
+}
+document.getElementById('unlock-coins').onclick = () => {
+  if(state.coins>=20){ state.coins-=20; updateResources(); alert('Chapter 4 unlocked! (In the real app, this leads straight into the next chamber.)'); }
+  else alert('Not enough Sand Coins — try "Watch a vision" instead.');
+};
+document.getElementById('watch-ad').onclick = () => { state.coins+=10; updateResources(); alert('Vision watched. +10 Sand Coins (simulated ad reward).'); };
+document.getElementById('restart-btn').onclick = () => location.reload();
+
+updateResources();
+initScene();
+chapter1_intro();
+</script>
+
+</body>
+</html>
