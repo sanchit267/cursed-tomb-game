@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>The Cursed Tomb: Shadows of the Sand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lora:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --sand-black:#0e0b07; --gold:#c9922b; --gold-bright:#f0c065;
+    --blood:#9a2e20; --ember:#ff7a3d; --parchment:#efe3c9; --parchment-dim:#b3a284;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; padding:0; height:100%; background:#000; color:var(--parchment); font-family:'Lora',serif; overflow:hidden; }
+  #app{ position:relative; width:100vw; height:100vh; background:#0a0704; overflow:hidden; }
+  #gameCanvas{ display:block; width:100%; height:100%; image-rendering: pixelated; }
+
+  #hud{
+    position:absolute; top:0; left:0; right:0; z-index:5;
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 14px 20px; pointer-events:none;
+  }
+  .hud-block{
+    font-family:'Cinzel', serif; font-size:13px; letter-spacing:1px; color:var(--gold-bright);
+    text-shadow: 0 2px 6px rgba(0,0,0,0.9);
+    display:flex; align-items:center; gap:10px;
+  }
+  #hearts{ display:flex; gap:5px; }
+  .heart{ width:16px; height:16px; background: var(--blood); clip-path: polygon(50% 15%, 61% 0%, 78% 0%, 100% 22%, 100% 40%, 50% 100%, 0% 40%, 0% 22%, 22% 0%, 39% 0%); box-shadow: 0 0 6px rgba(154,46,32,0.7); }
+  .heart.empty{ background: #3a2a1e; box-shadow:none; }
+
+  #title-card{
+    position:absolute; inset:0; z-index:10;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+    background: radial-gradient(ellipse at 50% 40%, rgba(60,40,15,0.5), rgba(5,3,1,0.95) 75%);
+    text-align:center; padding: 20px;
+  }
+  #title-card h1{ font-family:'Cinzel', serif; font-weight:900; font-size: clamp(24px,6vw,44px); margin:0; color:var(--parchment); text-shadow: 0 0 28px rgba(240,192,101,0.4); }
+  #title-card .sub{ font-family:'Cinzel', serif; font-size:12px; letter-spacing:3px; color:var(--gold-bright); }
+  #title-card .controls{ font-size:13px; color:var(--parchment-dim); line-height:1.9; max-width:420px; margin-top:6px; }
+  #title-card .controls b{ color:var(--gold-bright); }
+  #start-btn{
+    font-family:'Cinzel', serif; font-size:15px; letter-spacing:1.5px; font-weight:700;
+    padding: 14px 36px; margin-top:10px; border:none; border-radius:4px; cursor:pointer;
+    background: linear-gradient(180deg,var(--gold-bright),var(--gold)); color:var(--sand-black);
+    box-shadow: 0 0 20px rgba(240,192,101,0.4);
+  }
+
+  #end-card{
+    position:absolute; inset:0; z-index:10; display:none;
+    flex-direction:column; align-items:center; justify-content:center; gap:12px;
+    background: radial-gradient(ellipse at 50% 40%, rgba(60,40,15,0.5), rgba(5,3,1,0.96) 75%);
+    text-align:center; padding:20px;
+  }
+  #end-card h1{ font-family:'Cinzel', serif; font-size: clamp(22px,5vw,36px); margin:0; color:var(--gold-bright); }
+  #end-card p{ color:var(--parchment-dim); max-width:420px; font-size:14px; line-height:1.6; }
+
+  /* mobile touch controls */
+  #touch-controls{
+    position:absolute; bottom:0; left:0; right:0; z-index:6;
+    display:none; justify-content:space-between; align-items:flex-end;
+    padding: 0 16px 18px; pointer-events:none;
+  }
+  .tbtn{
+    pointer-events:auto; width:58px; height:58px; border-radius:50%;
+    background: rgba(36,29,21,0.75); border:1px solid rgba(201,146,43,0.5);
+    color:var(--gold-bright); font-family:'Cinzel',serif; font-size:14px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; user-select:none;
+  }
+  .tbtn:active{ background: rgba(240,192,101,0.35); }
+  #move-btns{ display:flex; gap:10px; }
+  #action-btns{ display:flex; gap:10px; }
+
+  @media (pointer: coarse){
+    #touch-controls{ display:flex; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="gameCanvas"></canvas>
+
+  <div id="hud">
+    <div class="hud-block"><span>HP</span><div id="hearts"></div></div>
+    <div class="hud-block" id="chapter-tag">CH. 1 — THE ENTRY HALL</div>
+    <div class="hud-block"><span id="score">0</span> SHARDS</div>
+  </div>
+
+  <div id="title-card">
+    <div class="sub">SHADOWS OF THE SAND</div>
+    <h1>The Cursed Tomb</h1>
+    <div class="controls">
+      <b>← →</b> Run &nbsp; <b>↑ / SPACE</b> Jump &nbsp; <b>X</b> Shoot &nbsp; <b>↓</b> Crouch<br>
+      Reach the sealed gate at the end of the hall. Watch the blades. Don't fall in the pit.
+    </div>
+    <button id="start-btn">Enter the Tomb</button>
+  </div>
+
+  <div id="end-card">
+    <h1 id="end-title">Chapter Complete</h1>
+    <p id="end-text">Kael forces the gate open and steps into the dark beyond. Chapter 2 picks up here.</p>
+    <button id="restart-btn" class="tbtn" style="width:auto;height:auto;padding:12px 28px;border-radius:4px;">Play Again</button>
+  </div>
+
+  <div id="touch-controls">
+    <div id="move-btns">
+      <div class="tbtn" id="btn-left">◀</div>
+      <div class="tbtn" id="btn-right">▶</div>
+    </div>
+    <div id="action-btns">
+      <div class="tbtn" id="btn-shoot">X</div>
+      <div class="tbtn" id="btn-jump">▲</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const app = document.getElementById('app');
+
+function resize(){
+  canvas.width = app.clientWidth;
+  canvas.height = app.clientHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+/* ---------------- WORLD / LEVEL DATA ---------------- */
+const GRAVITY = 0.62;
+const GROUND_Y = () => canvas.height - 90;
+const LEVEL_WIDTH = 3400;
+
+// Ground segments with a pit gap
+const groundSegments = [
+  { x0: 0, x1: 1050 },
+  // pit gap between 1050 and 1230
+  { x0: 1230, x1: 2050 },
+  { x0: 2050, x1: LEVEL_WIDTH },
+];
+
+// Floating platforms
+const platforms = [
+  { x: 1550, y: -140, w: 140, h: 22 },
+  { x: 2350, y: -190, w: 130, h: 22 },
+];
+
+// Swinging blade traps: { x, len, speed, phase }
+const blades = [
+  { x: 720, len: 90, speed: 0.045, phase: 0 },
+  { x: 2650, len: 100, speed: 0.038, phase: 2 },
+];
+
+// Static spike strip
+const spikes = [ { x0: 2200, x1: 2320 } ];
+
+// Enemies (mummies): patrol back and forth, take 2 hits
+const enemies = [
+  { x: 1400, w: 34, h: 52, dir: 1, minX: 1330, maxX: 1620, hp: 2, alive: true, hitFlash:0 },
+  { x: 2750, w: 34, h: 52, dir: -1, minX: 2680, maxX: 2950, hp: 2, alive: true, hitFlash:0 },
+];
+
+const gate = { x: LEVEL_WIDTH - 120, w: 60, h: 160, open: false, openAmount: 0 };
+
+/* ---------------- PLAYER ---------------- */
+const player = {
+  x: 100, y: 0, w: 30, h: 52,
+  vx: 0, vy: 0,
+  onGround: false,
+  facing: 1,
+  hp: 3, maxHp: 3,
+  invuln: 0,
+  crouching: false,
+  shootCooldown: 0,
+};
+player.y = GROUND_Y() - player.h;
+
+const projectiles = []; // { x, y, dir, life }
+let score = 0;
+let cameraX = 0;
+let gameRunning = false;
+let gameOver = false;
+
+/* ---------------- INPUT ---------------- */
+const keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+function bindTouch(id, code){
+  const el = document.getElementById(id);
+  el.addEventListener('pointerdown', e => { e.preventDefault(); keys[code] = true; });
+  el.addEventListener('pointerup', e => { keys[code] = false; });
+  el.addEventListener('pointerleave', e => { keys[code] = false; });
+}
+bindTouch('btn-left', 'ArrowLeft');
+bindTouch('btn-right', 'ArrowRight');
+bindTouch('btn-jump', 'ArrowUp');
+bindTouch('btn-shoot', 'KeyX');
+
+/* ---------------- HELPERS ---------------- */
+function groundAt(x){
+  for(const seg of groundSegments){ if(x >= seg.x0 && x <= seg.x1) return GROUND_Y(); }
+  return null; // pit
+}
+function rectsOverlap(ax,ay,aw,ah,bx,by,bw,bh){
+  return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by;
+}
+
+function updateHearts(){
+  const wrap = document.getElementById('hearts');
+  wrap.innerHTML = '';
+  for(let i=0;i<player.maxHp;i++){
+    const h = document.createElement('div');
+    h.className = 'heart' + (i < player.hp ? '' : ' empty');
+    wrap.appendChild(h);
+  }
+}
+function updateScore(){ document.getElementById('score').textContent = score; }
+
+function resetPlayer(){
+  player.x = 100; player.y = GROUND_Y() - player.h;
+  player.vx = 0; player.vy = 0; player.hp = player.maxHp; player.invuln = 60;
+  cameraX = 0;
+  updateHearts();
+}
+
+function damagePlayer(amount){
+  if(player.invuln > 0) return;
+  player.hp -= amount;
+  player.invuln = 70;
+  updateHearts();
+  if(player.hp <= 0){ endLevel(false); }
+}
+
+/* ---------------- UPDATE LOOP ---------------- */
+let lastTime = performance.now();
+function update(dt){
+  if(!gameRunning) return;
+
+  // horizontal movement
+  const speed = 4.2;
+  if(keys['ArrowLeft']){ player.vx = -speed; player.facing = -1; }
+  else if(keys['ArrowRight']){ player.vx = speed; player.facing = 1; }
+  else { player.vx = 0; }
+
+  player.crouching = !!keys['ArrowDown'] && player.onGround;
+
+  // jump
+  if((keys['ArrowUp'] || keys['Space']) && player.onGround){
+    player.vy = -12.5;
+    player.onGround = false;
+  }
+
+  // shoot
+  if(player.shootCooldown > 0) player.shootCooldown--;
+  if(keys['KeyX'] && player.shootCooldown === 0){
+    projectiles.push({ x: player.x + (player.facing===1? player.w : -6), y: player.y+20, dir: player.facing, life: 90 });
+    player.shootCooldown = 18;
+  }
+
+  // gravity
+  player.vy += GRAVITY;
+  if(player.vy > 16) player.vy = 16;
+
+  let nextX = player.x + player.vx;
+  let nextY = player.y + player.vy;
+
+  // platform collision (only when falling, landing on top)
+  player.onGround = false;
+  const gY = groundAt(player.x + player.w/2);
+  if(gY !== null && nextY + player.h >= gY && player.vy >= 0){
+    nextY = gY - player.h;
+    player.vy = 0;
+    player.onGround = true;
+  }
+  platforms.forEach(p=>{
+    const py = canvas.height + p.y; // p.y negative offset from bottom-ish reference not used; use absolute below
+  });
+  // floating platforms use absolute y from top of level baseline
+  platforms.forEach(p=>{
+    const platTop = GROUND_Y() + p.y;
+    if(player.vy >= 0 &&
+       player.x + player.w > p.x && player.x < p.x + p.w &&
+       player.y + player.h <= platTop + 10 &&
+       nextY + player.h >= platTop){
+      nextY = platTop - player.h;
+      player.vy = 0;
+      player.onGround = true;
+    }
+  });
+
+  // fell into pit
+  if(gY === null && !player.onGround){
+    let onPlatform = false;
+    platforms.forEach(p=>{
+      const platTop = GROUND_Y() + p.y;
+      if(player.x + player.w > p.x && player.x < p.x + p.w && Math.abs((player.y+player.h) - platTop) < 4) onPlatform = true;
+    });
+    if(!onPlatform && nextY > canvas.height + 200){
+      damagePlayer(1);
+      resetPlayer();
+      return;
+    }
+  }
+
+  player.x = Math.max(0, Math.min(nextX, LEVEL_WIDTH - player.w));
+  player.y = nextY;
+
+  // blades
+  const now = performance.now()/1000;
+  blades.forEach(b=>{
+    const angle = Math.sin(now*b.speed*10 + b.phase) * 1.15; // radians swing
+    b.angle = angle;
+    const tipX = b.x + Math.sin(angle) * b.len;
+    const tipY = (GROUND_Y() - 220) + Math.cos(angle) * b.len;
+    b.tipX = tipX; b.tipY = tipY;
+    const dx = (player.x+player.w/2) - tipX;
+    const dy = (player.y+player.h/2) - tipY;
+    if(Math.sqrt(dx*dx+dy*dy) < 26){ damagePlayer(1); }
+  });
+
+  // spikes
+  spikes.forEach(s=>{
+    if(player.x + player.w > s.x0 && player.x < s.x1 && player.onGround){ damagePlayer(1); }
+  });
+
+  // enemies
+  enemies.forEach(en=>{
+    if(!en.alive) return;
+    en.x += en.dir * 1.1;
+    if(en.x < en.minX || en.x > en.maxX) en.dir *= -1;
+    if(en.hitFlash>0) en.hitFlash--;
+    const enY = GROUND_Y() - en.h;
+    if(player.invuln===0 && rectsOverlap(player.x,player.y,player.w,player.h, en.x,enY,en.w,en.h)){
+      damagePlayer(1);
+    }
+  });
+
+  // projectiles
+  for(let i=projectiles.length-1;i>=0;i--){
+    const p = projectiles[i];
+    p.x += p.dir * 9;
+    p.life--;
+    let hit = false;
+    enemies.forEach(en=>{
+      if(!en.alive) return;
+      const enY = GROUND_Y() - en.h;
+      if(rectsOverlap(p.x-3,p.y-3,6,6, en.x,enY,en.w,en.h)){
+        en.hp -= 1; en.hitFlash = 8; hit = true;
+        if(en.hp<=0){ en.alive = false; score += 10; updateScore(); }
+      }
+    });
+    if(hit || p.life<=0) projectiles.splice(i,1);
+  }
+
+  // gate
+  if(player.x + player.w > gate.x - 10 && !gate.open){
+    gate.open = true;
+  }
+  if(gate.open && gate.openAmount < 1) gate.openAmount += 0.02;
+  if(player.x + player.w >= gate.x + gate.w - 10 && gate.openAmount > 0.8){
+    endLevel(true);
+  }
+
+  // camera
+  const targetCam = Math.max(0, Math.min(player.x - canvas.width*0.4, LEVEL_WIDTH - canvas.width));
+  cameraX += (targetCam - cameraX) * 0.12;
+
+  if(player.invuln > 0) player.invuln--;
+}
+
+/* ---------------- DRAW ---------------- */
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // background gradient
+  const grad = ctx.createLinearGradient(0,0,0,canvas.height);
+  grad.addColorStop(0, '#1c130a');
+  grad.addColorStop(0.6, '#120d07');
+  grad.addColorStop(1, '#0a0704');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  ctx.save();
+  ctx.translate(-cameraX, 0);
+
+  // parallax pillars (background)
+  ctx.fillStyle = 'rgba(20,15,9,0.8)';
+  for(let x = -200; x < LEVEL_WIDTH+200; x += 260){
+    const px = x - cameraX*0.3 + cameraX; // simple parallax factor
+    ctx.fillRect(x*0.94, canvas.height-320, 40, 320);
+  }
+
+  // ground segments
+  ctx.fillStyle = '#241d15';
+  groundSegments.forEach(seg=>{
+    ctx.fillRect(seg.x0, GROUND_Y(), seg.x1-seg.x0, canvas.height-GROUND_Y());
+    ctx.fillStyle = '#c9922b33';
+    ctx.fillRect(seg.x0, GROUND_Y(), seg.x1-seg.x0, 4);
+    ctx.fillStyle = '#241d15';
+  });
+
+  // pit glow (danger under gap)
+  ctx.fillStyle = 'rgba(154,46,32,0.25)';
+  ctx.fillRect(1050, GROUND_Y()+4, 180, canvas.height-GROUND_Y());
+
+  // platforms
+  ctx.fillStyle = '#33281a';
+  platforms.forEach(p=>{
+    ctx.fillRect(p.x, GROUND_Y()+p.y, p.w, p.h);
+  });
+
+  // spikes
+  ctx.fillStyle = '#8a8578';
+  spikes.forEach(s=>{
+    const count = Math.floor((s.x1-s.x0)/14);
+    for(let i=0;i<count;i++){
+      const sx = s.x0 + i*14;
+      ctx.beginPath();
+      ctx.moveTo(sx, GROUND_Y());
+      ctx.lineTo(sx+7, GROUND_Y()-16);
+      ctx.lineTo(sx+14, GROUND_Y());
+      ctx.closePath();
+      ctx.fill();
+    }
+  });
+
+  // blades (chains + blade)
+  blades.forEach(b=>{
+    const originX = b.x, originY = GROUND_Y()-220;
+    ctx.strokeStyle = 'rgba(120,100,70,0.6)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(originX, originY-60); ctx.lineTo(b.tipX, b.tipY); ctx.stroke();
+    ctx.fillStyle = '#cfd2d6';
+    ctx.save();
+    ctx.translate(b.tipX, b.tipY);
+    ctx.rotate(b.angle);
+    ctx.beginPath();
+    ctx.moveTo(-4,-30); ctx.lineTo(4,-30); ctx.lineTo(10,10); ctx.lineTo(0,26); ctx.lineTo(-10,10);
+    ctx.closePath();
+    ctx.fillStyle = '#b7c4cc';
+    ctx.fill();
+    ctx.restore();
+  });
+
+  // enemies (mummies)
+  enemies.forEach(en=>{
+    if(!en.alive) return;
+    const enY = GROUND_Y() - en.h;
+    ctx.fillStyle = en.hitFlash>0 ? '#ffffff' : '#d8caa8';
+    ctx.fillRect(en.x, enY, en.w, en.h);
+    ctx.fillStyle = '#8a2e20';
+    ctx.fillRect(en.x+6, enY+14, en.w-12, 4);
+  });
+
+  // projectiles
+  ctx.fillStyle = '#f0c065';
+  projectiles.forEach(p=>{
+    ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill();
+  });
+
+  // gate
+  const gateH = gate.h * (1 - gate.openAmount*0.85);
+  ctx.fillStyle = '#3a2c1c';
+  ctx.fillRect(gate.x, GROUND_Y() - gateH, gate.w, gateH);
+  ctx.strokeStyle = 'rgba(240,192,101,0.5)';
+  ctx.strokeRect(gate.x, GROUND_Y() - gate.h, gate.w, gate.h);
+
+  // player
+  const flashOn = player.invuln>0 && Math.floor(player.invuln/6)%2===0;
+  ctx.fillStyle = flashOn ? 'rgba(240,192,101,0.6)' : '#e8dcc4';
+  const ph = player.crouching ? player.h*0.6 : player.h;
+  const py = player.crouching ? player.y + (player.h-ph) : player.y;
+  ctx.fillRect(player.x, py, player.w, ph);
+  // simple facing indicator
+  ctx.fillStyle = '#9a2e20';
+  ctx.fillRect(player.facing===1 ? player.x+player.w-6 : player.x, py+8, 6, 6);
+
+  ctx.restore();
+}
+
+/* ---------------- GAME LOOP ---------------- */
+function loop(now){
+  const dt = now - lastTime; lastTime = now;
+  update(dt);
+  draw();
+  if(gameRunning) requestAnimationFrame(loop);
+}
+
+function startGame(){
+  document.getElementById('title-card').style.display = 'none';
+  document.getElementById('end-card').style.display = 'none';
+  gameRunning = true;
+  resetPlayer();
+  score = 0; updateScore();
+  enemies.forEach(en=>{ en.alive = true; en.hp = 2; });
+  gate.open = false; gate.openAmount = 0;
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+}
+
+function endLevel(won){
+  gameRunning = false;
+  const endCard = document.getElementById('end-card');
+  document.getElementById('end-title').textContent = won ? 'Gate Forced Open' : 'Kael Falls';
+  document.getElementById('end-text').textContent = won
+    ? 'Kael forces the gate open and steps into the dark beyond. Chapter 2 picks up here — Dara\'s journal, and the truth of what the King feared.'
+    : 'The tomb claims another guardian... for now. Try the corridor again.';
+  endCard.style.display = 'flex';
+}
+
+document.getElementById('start-btn').onclick = startGame;
+document.getElementById('restart-btn').onclick = startGame;
+
+updateHearts();
+draw();
+</script>
+</body>
+</html>
